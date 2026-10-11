@@ -1347,8 +1347,9 @@ runs:
         if [ -z "$KSU_CERT_SIZE" ] || [ -z "$KSU_CERT_HASH" ]; then
           echo "管理器证书未由 get-manager 传入，回退到 FinaSU Release APK 提取..."
           REL_APK=$(mktemp -d)/manager.apk
-          # 与 get-manager 的 FINASU_RELEASE_TAG 保持一致（drift 补丁适配的发行版）
-          FINASU_RELEASE_TAG="v0.1.0-beta5"
+          # 与 get-manager 的作业级 FINASU_RELEASE_TAG 保持一致（drift 补丁适配
+          # 的发行版；升级 tag 时两处需同步）
+          FINASU_RELEASE_TAG="v0.1.0-preview1"
           REL_JSON=""
           for ATTEMPT in 1 2 3; do
             REL_JSON=$(curl -s --fail --max-time 30 \

@@ -352,7 +352,9 @@ jobs:
           device=$(echo "$device" | jq -c --argjson dn "$dn" '.ds = $dn | .ntsync = $dn')
           echo "Droidspaces/NTSync override: $dn"
 
-          # KernelSU 变体（固定默认分支：SukiSU→builtin, BakaSU→main, FinaSU→master）
+          # KernelSU 变体（固定构建来源：SukiSU→builtin, BakaSU→main,
+          # FinaSU→官方发行版 tag，与 get-manager 的 FINASU_RELEASE_TAG 一致：
+          # 管理器只拉该 Release 的 APK，内核 AK3 只按该 tag 提交构建）
           ksu_variant='${{ inputs.ksu_variant }}'
           case "$ksu_variant" in
             SukiSU)
@@ -364,7 +366,7 @@ jobs:
               KSU_REPO="Baka-SU/BakaSU"
               ;;
             FinaSU)
-              ksu_hash="master"
+              ksu_hash="v0.1.0-preview1"
               KSU_REPO="LyraVoid/FinaSU"
               ;;
             *)
@@ -399,7 +401,7 @@ jobs:
             echo "| Setting | Value |"
             echo "|---------|-------|"
             echo "| Device | \`${{ steps.set-matrix.outputs.model_display }}\` |"
-            echo "| KernelSU | \`${{ inputs.ksu_variant }}\` @ \`${{ inputs.ksu_variant == 'SukiSU' && 'builtin' || (inputs.ksu_variant == 'FinaSU' && 'master' || 'main') }}\` |"
+            echo "| KernelSU | \`${{ inputs.ksu_variant }}\` @ \`${{ inputs.ksu_variant == 'SukiSU' && 'builtin' || (inputs.ksu_variant == 'FinaSU' && 'v0.1.0-preview1 (release)' || 'main') }}\` |"
             echo "| Re-Kernel | ${{ inputs.use_rekernel && '✅ enabled' || '❌ disabled' }} |"
             echo "| Optimization | \`${{ inputs.optimize_level }}\` |"
             echo "| Droidspaces & NTSync | ${{ inputs.enable_droidspaces_ntsync && '✅ enabled' || '❌ disabled' }} |"

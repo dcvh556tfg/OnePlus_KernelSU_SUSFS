@@ -4,22 +4,31 @@
 # susfs4ksu 各 GKI 分支的 kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
 # 针对 FinaSU（新目录布局）的内核源码生成，用于把 FinaSU 从 inline syscall
 # hook 模式改写为 SUSFS 手动钩子模式（五个 GKI 分支的该补丁字节级相同）。
-# FinaSU master 在补丁基准之后又合入了动态管理器、AVC log spoofing 等特性，
-# 其中 4 个文件上下文漂移，上游补丁无法直接命中：
+# FinaSU v0.1.0-preview1（tag 提交 9c18e035，见 get-manager.yml 的
+# FINASU_RELEASE_TAG）在补丁基准之后合入了动态管理器、AVC log spoofing、
+# module_blacklist、forced feature 等特性，其中 6 个文件上下文漂移，
+# 上游补丁无法直接命中：
+#   kernel/Kbuild
 #   kernel/core/init.c
 #   kernel/feature/selinux_hide.c
 #   kernel/runtime/boot_event.c
+#   kernel/runtime/ksud_integration.c
 #   kernel/supercall/dispatch.c
 #
 # 本脚本按两步法应用：
-#   1) 上游 10_enable 补丁排除上述 4 个文件后应用（其余文件干净命中）
-#   2) 应用本仓库维护的 susfs_drift_fixes.patch（4 个漂移文件基于
-#      FinaSU master 的重新适配，包含上游这 4 个文件的全部改动，
-#      并保留 master 新特性：avc_spoof 初始化、动态管理器初始化、
-#      SECOND_SIGNATURE_RELEASE 版本标志）
+#   1) 上游 10_enable 补丁排除上述 6 个文件后应用（其余文件干净命中）
+#   2) 应用本仓库维护的 susfs_drift_fixes.patch（6 个漂移文件基于
+#      FinaSU v0.1.0-preview1 的重新适配，包含上游这些文件的全部改动，
+#      并保留 preview1 新特性：avc_spoof 初始化、动态管理器初始化、
+#      module_blacklist、forced feature、KSU_FEATURE_FLAG_* 超管标志；
+#      Kbuild 部分额外保留 infra/symbol_resolver.o —— module_blacklist.c
+#      依赖 find_kernel_symbol_exact()，而 10_enable 会把 resolver 连同
+#      inline hook 机制一起移出编译列表）
 #
-# FinaSU 上游结构变化导致任一步失败时，需要基于新 master 重新生成
-# susfs_drift_fixes.patch（重新执行三方合并并解决冲突）。
+# FinaSU 上游结构变化导致任一步失败时，需要基于新发行版 tag 重新生成
+# susfs_drift_fixes.patch（重新执行三方合并并解决冲突），并同步提升
+# get-manager.yml / build-kernel action / 两个构建工作流矩阵里的
+# FINASU_RELEASE_TAG。
 #
 # 用法: apply.sh [KSU_DIR]（默认 KernelSU；依赖环境变量 SUSFS4KSU 指向
 #       已按 GKI 分支克隆的 susfs4ksu 仓库）
@@ -30,11 +39,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRIFT_PATCH="$SCRIPT_DIR/susfs_drift_fixes.patch"
 UPSTREAM_PATCH="${SUSFS4KSU:-$PWD/susfs4ksu}/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch"
 
-# 4 个漂移文件（与 susfs_drift_fixes.patch 的覆盖范围严格一致）
+# 6 个漂移文件（与 susfs_drift_fixes.patch 的覆盖范围严格一致）
 DRIFT_FILES=(
+  kernel/Kbuild
   kernel/core/init.c
   kernel/feature/selinux_hide.c
   kernel/runtime/boot_event.c
+  kernel/runtime/ksud_integration.c
   kernel/supercall/dispatch.c
 )
 
@@ -50,7 +61,7 @@ done
 echo "步骤 1/2: 应用 susfs4ksu 10_enable_susfs_for_ksu.patch（排除 ${#DRIFT_FILES[@]} 个漂移文件）..."
 git -C "$KSU_DIR" apply "${EXCLUDES[@]}" "$UPSTREAM_PATCH"
 
-echo "步骤 2/2: 应用 FinaSU drift-fixes（4 个漂移文件的重适配）..."
+echo "步骤 2/2: 应用 FinaSU drift-fixes（6 个漂移文件的重适配）..."
 git -C "$KSU_DIR" apply "$DRIFT_PATCH"
 
 # ---- 应用结果校验 ----
@@ -62,6 +73,8 @@ grep -q "susfs_init" "$KSU_DIR/kernel/core/init.c" \
   || fail "init.c 缺少 susfs_init 调用，drift-fixes 应用不完整"
 grep -q "extern void security_dump_masked_av_fn" "$KSU_DIR/kernel/feature/selinux_hide.c" \
   || fail "selinux_hide.c 缺少 susfs extern 符号声明，drift-fixes 应用不完整"
+grep -q "kernelsu-objs += infra/symbol_resolver.o" "$KSU_DIR/kernel/Kbuild" \
+  || fail "Kbuild 缺少 infra/symbol_resolver.o（module_blacklist 链接依赖），drift-fixes 应用不完整"
 if grep -qE 'kernelsu-objs \+= hook/(lsm_hook|syscall_event_bridge|syscall_hook_manager|tp_marker)' "$KSU_DIR/kernel/Kbuild"; then
   fail "Kbuild 仍包含 inline syscall hook 对象，10_enable 补丁未正确应用"
 fi

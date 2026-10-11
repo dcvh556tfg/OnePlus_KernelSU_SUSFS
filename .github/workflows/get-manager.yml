@@ -43,6 +43,13 @@ jobs:
       managerCertHash: ${{ steps.add_KSU.outputs.managerCertHash }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # FinaSU 管理器只从官方 GitHub Release 拉取，内核 AK3 也只按该发行版
+      # tag 的同一提交构建。FinaSU 发版频繁，内核侧文件漂移会让
+      # scripts/finasu_compat/susfs_drift_fixes.patch 失配，该 pin 指向 drift
+      # 补丁适配的发行版 tag；重新生成 drift 补丁后同步提升即可跟随新版。
+      # 升级 tag 时需同步修改（共 4 处）：本文件、build-kernel action 的证书
+      # 回退、build-kernel-release.yml 与 oneplus-custom.yml 的 FinaSU 矩阵 pin。
+      FINASU_RELEASE_TAG: v0.1.0-preview1
 
     steps:
       - name: 检出脚本仓库
@@ -66,6 +73,12 @@ jobs:
           fi
 
           cd KernelSU
+
+          # FinaSU：对齐发行版 tag 计算版本号，保证 ksuVer 与拉取的
+          # Release 管理器 / 构建的内核 AK3 三者同源（30000 + 提交数）
+          if [ "${{ inputs.ksu_variant }}" == "FinaSU" ]; then
+            git checkout -q "$FINASU_RELEASE_TAG"
+          fi
 
           # 计算KSU版本号
           KSU_GIT_VERSION=$(git rev-list --count HEAD)
@@ -113,12 +126,9 @@ jobs:
             EXPECTED_BRANCH="master"
           fi
 
-          # ── FinaSU：只从官方 GitHub Release 拉取管理器（不走 CI 构建产物）──────────
+          # ── FinaSU：只从官方 GitHub Release 拉取管理器（不走 CI 构建产物），
+          #    内核对齐该发行版 tag 的同一提交（见作业级 FINASU_RELEASE_TAG 注释）──
           if [ "${{ inputs.ksu_variant }}" == "FinaSU" ]; then
-            # FinaSU 发版频繁，内核侧文件漂移会让 scripts/finasu_compat/susfs_drift_fixes.patch
-            # 失配（v0.1.0-preview1 起已失配）。该 pin 指向 drift 补丁适配的发行版 tag；
-            # 重新生成 drift 补丁后同步提升即可跟随新版。管理器与内核同 tag 对齐。
-            FINASU_RELEASE_TAG="v0.1.0-beta5"
             REL_JSON=""
             for ATTEMPT in 1 2 3; do
               REL_JSON=$(curl -s --fail --max-time 30 -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
@@ -145,7 +155,7 @@ jobs:
             fi
             APK_FILE="manager-artifacts/$APK_NAME"
 
-            # APK 文件名形如 FinaSU_v0.1.0-beta5_32794-release.apk，末段数字即 versionCode
+            # APK 文件名形如 FinaSU_v0.1.0-preview1_32810-release.apk，末段数字即 versionCode
             CLEAN_NAME=$(basename "$APK_FILE" | sed -E 's/-(arm64-v8a|armeabi-v7a|armv7|riscv64|x86_64|x86|universal)-release\.apk$/.apk/')
             ACTUAL_VERSION=$(echo "$CLEAN_NAME" | grep -oE '_[0-9]+-release\.apk$' | tail -n 1 | sed 's/^_//; s/-release\.apk$//')
             if ! [[ "$ACTUAL_VERSION" =~ ^[0-9]+$ ]]; then
@@ -238,7 +248,7 @@ jobs:
                 EVENT=$(printf '%s' "$RUNS" | jq -r ".workflow_runs[$INDEX].event")
                 CREATED=$(printf '%s' "$RUNS" | jq -r ".workflow_runs[$INDEX].created_at")
                 # 只认官方默认分支 push 上传的构建，跳过 PR / 其他分支构建
-                #（SukiSU/BakaSU 为 main，FinaSU 为 master）
+                #（SukiSU/BakaSU 为 main；FinaSU 走 Release 拉取，不经过此路径）
                 if [ "$HEAD_BRANCH" != "$EXPECTED_BRANCH" ] || [ "$EVENT" != "push" ]; then
                   echo "跳过构建 $BUILD_ID ($HEAD_BRANCH/$EVENT): 非官方 $EXPECTED_BRANCH 分支 push 构建"
                   continue
@@ -352,24 +362,7 @@ jobs:
             find manager-artifacts -type f -name "*.apk" -print
           fi
 
-          if [ "${{ inputs.ksu_variant }}" == "FinaSU" ]; then
-            # 从本次分发的管理器 APK 提取签名证书（DER），供内核侧第二信任槽
-            # （EXPECTED_SIZE2/EXPECTED_HASH2）对齐。FinaSU 的内核只信任槽内
-            # 签名的管理器，不注入证书时内核会转而信任上游 KernelSU 默认槽，
-            # 导致 root 被官方 KernelSU 管理器抢占、FinaSU 管理器显示"未安装"。
-            echo "从管理器 APK 提取签名证书..."
-            CERT_INFO=$(python3 "$GITHUB_WORKSPACE/scripts/finasu_compat/extract_manager_cert.py" "$APK_FILE" | head -n1)
-            if [ -z "$CERT_INFO" ]; then
-              echo "::warning::未能从 FinaSU 管理器 APK 提取签名证书，内核侧将回退到最新 Release APK 提取"
-              exit 0
-            fi
-            CERT_SIZE=$(echo "$CERT_INFO" | awk '{print $1}')
-            CERT_HASH=$(echo "$CERT_INFO" | awk '{print $2}')
-            echo "管理器签名证书: size=$CERT_SIZE sha256=$CERT_HASH"
-            echo "managerCertSize=$CERT_SIZE" >> $GITHUB_OUTPUT
-            echo "managerCertHash=$CERT_HASH" >> $GITHUB_OUTPUT
-          fi
-
+          # FinaSU 不会走到这里：上面的分支从官方 Release 拉取管理器后已 exit 0
           echo "MANAGER_FETCH_OK=true" >> $GITHUB_ENV
 
       - name: 添加 SUSFS 模块

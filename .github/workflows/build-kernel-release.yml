@@ -108,7 +108,9 @@ jobs:
           
           input="${{ github.event.inputs.op_model }}"
           ksu_variant="${{ github.event.inputs.ksu_variant }}"
-          # 固定默认分支：SukiSU→builtin（内置 SUSFS）、BakaSU→main
+          # 固定构建来源：SukiSU→builtin（内置 SUSFS）、BakaSU→main；
+          # FinaSU→官方发行版 tag（与 get-manager 的 FINASU_RELEASE_TAG 一致，
+          # 管理器只拉该 Release 的 APK，内核 AK3 只按该 tag 提交构建）
           case "$ksu_variant" in
             SukiSU)
               ksu_hash="builtin"
@@ -117,7 +119,7 @@ jobs:
               ksu_hash="main"
               ;;
             FinaSU)
-              ksu_hash="master"
+              ksu_hash="v0.1.0-preview1"
               ;;
             *)
               echo "::error::Unsupported KernelSU variant: $ksu_variant (supported: SukiSU, BakaSU, FinaSU)"
@@ -684,7 +686,9 @@ jobs:
           ksu_type: ${{ matrix.ksu_type }}
           ksu_branch_or_hash: ${{ matrix.ksu_resolved_hash }}
           use_rekernel: ${{ inputs.use_rekernel }}
-          # BakaSU/FinaSU：内核侧检出到官方最新上传 Manager 构建的同一提交（空=跟随 ksu_branch_or_hash）
+          # BakaSU：内核侧检出到官方最新上传 Manager 构建的同一提交；
+          # FinaSU：该提交即 FINASU_RELEASE_TAG 发行版提交（与 ksu_branch_or_hash
+          # 的 tag pin 同源，双保险；空=跟随 ksu_branch_or_hash）
           ksu_commit: ${{ needs.get-manager.outputs.ksuCommit }}
           # FinaSU：管理器签名证书（内核第二信任槽对齐用，空=构建时回退 Release APK 提取）
           ksu_cert_size: ${{ needs.get-manager.outputs.managerCertSize }}
@@ -926,7 +930,7 @@ jobs:
                 ;;
               FinaSU)
                 KSU_REPO_URL="https://github.com/LyraVoid/FinaSU/commit/$RK_KSU_COMMIT"
-                ksu_ref="master @ ${RK_KSU_COMMIT:0:8}"
+                ksu_ref="${ksu_ref} @ ${RK_KSU_COMMIT:0:8}"
                 ;;
               *)
                 KSU_REPO_URL="https://github.com/Baka-SU/BakaSU/commit/$RK_KSU_COMMIT"
