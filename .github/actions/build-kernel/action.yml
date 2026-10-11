@@ -1345,12 +1345,14 @@ runs:
         # 不注入时内核仅信任上游 KernelSU 默认槽，官方 KernelSU 管理器会抢占
         # manager 身份，FinaSU 管理器显示"未安装"。
         if [ -z "$KSU_CERT_SIZE" ] || [ -z "$KSU_CERT_HASH" ]; then
-          echo "管理器证书未由 get-manager 传入，回退到 FinaSU 最新 Release APK 提取..."
+          echo "管理器证书未由 get-manager 传入，回退到 FinaSU Release APK 提取..."
           REL_APK=$(mktemp -d)/manager.apk
+          # 与 get-manager 的 FINASU_RELEASE_TAG 保持一致（drift 补丁适配的发行版）
+          FINASU_RELEASE_TAG="v0.1.0-beta5"
           REL_JSON=""
           for ATTEMPT in 1 2 3; do
             REL_JSON=$(curl -s --fail --max-time 30 \
-              "https://api.github.com/repos/LyraVoid/FinaSU/releases/latest") \
+              "https://api.github.com/repos/LyraVoid/FinaSU/releases/tags/$FINASU_RELEASE_TAG") \
               && [ -n "$REL_JSON" ] && break
             echo "获取 Release 信息失败，重试 ($ATTEMPT/3)..."
             sleep 5

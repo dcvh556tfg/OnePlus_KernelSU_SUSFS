@@ -115,24 +115,21 @@ jobs:
 
           # ── FinaSU：只从官方 GitHub Release 拉取管理器（不走 CI 构建产物）──────────
           if [ "${{ inputs.ksu_variant }}" == "FinaSU" ]; then
+            # FinaSU 发版频繁，内核侧文件漂移会让 scripts/finasu_compat/susfs_drift_fixes.patch
+            # 失配（v0.1.0-preview1 起已失配）。该 pin 指向 drift 补丁适配的发行版 tag；
+            # 重新生成 drift 补丁后同步提升即可跟随新版。管理器与内核同 tag 对齐。
+            FINASU_RELEASE_TAG="v0.1.0-beta5"
             REL_JSON=""
             for ATTEMPT in 1 2 3; do
               REL_JSON=$(curl -s --fail --max-time 30 -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/LyraVoid/FinaSU/releases/latest") && [ -n "$REL_JSON" ] && break
-              echo "获取 FinaSU 最新 Release 失败，重试 ($ATTEMPT/3)..."
+                "https://api.github.com/repos/LyraVoid/FinaSU/releases/tags/$FINASU_RELEASE_TAG") && [ -n "$REL_JSON" ] && break
+              echo "获取 FinaSU Release $FINASU_RELEASE_TAG 失败，重试 ($ATTEMPT/3)..."
               sleep 5
             done
-            [ -z "$REL_JSON" ] && { echo "无法获取 FinaSU 最新 Release 信息"; exit 1; }
+            [ -z "$REL_JSON" ] && { echo "无法获取 FinaSU Release $FINASU_RELEASE_TAG 信息（tag 被删除时请更新 FINASU_RELEASE_TAG）"; exit 1; }
 
             REL_TAG=$(printf '%s' "$REL_JSON" | jq -r '.tag_name')
             REL_APK_URL=$(printf '%s' "$REL_JSON" | jq -r '[.assets[] | select(.name | endswith("-release.apk"))][0].browser_download_url')
-            # /releases/latest 不含 pre-release；无 APK 资产时回退检索最近 10 个 Release
-            if [ -z "$REL_APK_URL" ] || [ "$REL_APK_URL" = "null" ]; then
-              echo "Release $REL_TAG 中无 APK 资产，回退检索最近 Release 列表..."
-              REL_LIST=$(curl -s --fail --max-time 30 -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/LyraVoid/FinaSU/releases?per_page=10")
-              REL_APK_URL=$(printf '%s' "$REL_LIST" | jq -r '[.[] | select(.draft == false) | .assets[] | select(.name | endswith("-release.apk")) | .browser_download_url][0]')
-            fi
             if [ -z "$REL_APK_URL" ] || [ "$REL_APK_URL" = "null" ]; then
               echo "FinaSU 最近的 Release 中均未找到管理器 APK"
               exit 1
